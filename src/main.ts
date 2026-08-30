@@ -10,6 +10,7 @@ let audioBuffer: AudioBuffer | null = null;
 let audioContext: AudioContext | null = null;
 let pitchShifter: PitchShifter | null = null;
 let gainNode: GainNode | null = null;
+let playbackOffset = 0; // start position in original buffer (seconds)
 let pitchSemiTones = 0;
 let recordingTimer: number | null = null;
 let recordingDuration = 0;
@@ -28,7 +29,7 @@ function render() {
     currentSec = recordingDuration;
   } else if (isPlaying || isPaused) {
     if (pitchShifter) {
-      currentSec = pitchShifter.timePlayed;
+      currentSec = playbackOffset + pitchShifter.timePlayed;
     }
   }
 
@@ -112,20 +113,16 @@ function render() {
   // Seek on waveform click
   const waveform = document.getElementById("waveform");
   waveform?.addEventListener("click", (e) => {
-    if (!hasRecording || isRecording || !pitchShifter) return;
+    if (!hasRecording || isRecording) return;
     const rect = waveform.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const seekTime = ratio * (audioBuffer?.duration ?? 0);
 
-    const wasPlaying = state === "playing";
-    if (wasPlaying) {
-      stopPlayback();
-    }
-    playBuffer(seekTime);
-    if (!wasPlaying) {
-      // Start paused at seek position
-      pitchShifter.disconnect();
-    }
+    stopPlayback();
+    // Give the old PitchShifter time to clean up its ScriptProcessor
+    setTimeout(() => {
+      playBuffer(seekTime);
+    }, 50);
   });
 }
 
@@ -214,10 +211,14 @@ function playBuffer(offset: number) {
     audioContext.resume();
   }
 
+  // Create a sliced buffer if seeking to a position
+  playbackOffset = offset;
+  const bufferToPlay = offset > 0 ? sliceBuffer(audioBuffer!, offset) : audioBuffer;
+
   gainNode = audioContext.createGain();
   gainNode.connect(audioContext.destination);
 
-  pitchShifter = new PitchShifter(audioContext, audioBuffer, 2048);
+  pitchShifter = new PitchShifter(audioContext, bufferToPlay, 2048);
   pitchShifter.on("play", () => {
     state = "playing";
     render();
@@ -236,13 +237,24 @@ function playBuffer(offset: number) {
 
   pitchShifter.connect(gainNode);
 
-  // Jump to position if needed
-  if (offset > 0) {
-    pitchShifter.source.position = Math.floor(offset * audioContext.sampleRate);
-  }
-
   state = "playing";
   render();
+}
+
+function sliceBuffer(buffer: AudioBuffer, startSeconds: number): AudioBuffer {
+  const startSample = Math.floor(startSeconds * buffer.sampleRate);
+  const numSamples = buffer.length - startSample;
+  const numChannels = buffer.numberOfChannels;
+
+  const newBuffer = audioContext!.createBuffer(numChannels, numSamples, buffer.sampleRate);
+
+  for (let ch = 0; ch < numChannels; ch++) {
+    const sourceData = buffer.getChannelData(ch);
+    const destData = newBuffer.getChannelData(ch);
+    destData.set(sourceData.subarray(startSample));
+  }
+
+  return newBuffer;
 }
 
 function pausePlayback() {
@@ -269,6 +281,7 @@ function stopPlayback() {
 
 function stop() {
   stopPlayback();
+  playbackOffset = 0;
   state = "idle";
   render();
 }
