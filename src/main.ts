@@ -219,12 +219,10 @@ function playBuffer(offset: number) {
 
   pitchShifter = new PitchShifter(audioContext, audioBuffer, 2048);
   pitchShifter.on("play", () => {
-    console.log("pitch shifter play event");
     state = "playing";
     render();
   });
   pitchShifter.on("end", () => {
-    console.log("pitch shifter end event");
     if (state === "playing") {
       stop();
     }
@@ -236,17 +234,7 @@ function playBuffer(offset: number) {
   pitchShifter.tempo = 1;
   pitchShifter.pitch = Math.pow(2, pitchSemiTones / 12);
 
-  console.log("audioBuffer duration:", audioBuffer.duration, "sampleRate:", audioBuffer.sampleRate);
-  console.log("gainNode connected to destination");
-  console.log("connecting pitchShifter to gainNode");
   pitchShifter.connect(gainNode);
-  console.log(
-    "connected, audioContext.state:",
-    audioContext.state,
-    "destination:",
-    audioContext.destination,
-  );
-  console.log("gainNode gain:", gainNode.gain.value);
 
   // Jump to position if needed
   if (offset > 0) {
