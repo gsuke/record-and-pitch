@@ -10,6 +10,7 @@ export interface AudioController {
   readonly currentTime: number;
   readonly duration: number;
   readonly pitchSemiTones: number;
+  readonly volume: number;
   readonly recordingDuration: number;
   onStateChange?: (state: State) => void;
   onTimeUpdate?: (currentTime: number) => void;
@@ -19,6 +20,7 @@ export interface AudioController {
   stop(): void;
   seek(time: number): void;
   setPitch(semitones: number): void;
+  setVolume(volume: number): void;
 }
 
 export function createAudioController(): AudioController {
@@ -29,6 +31,7 @@ export function createAudioController(): AudioController {
   let audioBuffer: AudioBuffer | null = null;
   let playbackOffset = 0;
   let pitchSemiTones = 0;
+  let volume = 1.0;
   let state: State = "idle";
   let recordingTimer: number | null = null;
   let recordingDuration = 0;
@@ -53,6 +56,7 @@ export function createAudioController(): AudioController {
     stopPlayback();
 
     gainNode = audioContext.createGain();
+    gainNode.gain.value = volume;
     gainNode.connect(audioContext.destination);
 
     const bufferToPlay = offset > 0 ? sliceBuffer(audioBuffer, offset) : audioBuffer;
@@ -146,6 +150,9 @@ export function createAudioController(): AudioController {
     get pitchSemiTones() {
       return pitchSemiTones;
     },
+    get volume() {
+      return volume;
+    },
     get recordingDuration() {
       return recordingDuration;
     },
@@ -229,6 +236,13 @@ export function createAudioController(): AudioController {
       pitchSemiTones = semitones;
       if (pitchShifter) {
         pitchShifter.pitch = Math.pow(2, semitones / 12);
+      }
+    },
+
+    setVolume(v: number) {
+      volume = v;
+      if (gainNode) {
+        gainNode.gain.value = v;
       }
     },
   };

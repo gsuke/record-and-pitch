@@ -8,7 +8,8 @@ function formatTime(sec: number): string {
 
 export function createUI(container: HTMLElement, audio: AudioController) {
   function render() {
-    const { state, audioBuffer, currentTime, duration, pitchSemiTones, recordingDuration } = audio;
+    const { state, audioBuffer, currentTime, duration, pitchSemiTones, volume, recordingDuration } =
+      audio;
     const isRecording = state === "recording";
     const isPlaying = state === "playing";
     const isPaused = state === "paused";
@@ -17,6 +18,7 @@ export function createUI(container: HTMLElement, audio: AudioController) {
     const displayTime = isRecording ? recordingDuration : currentTime;
     const totalSec = duration;
     const progress = totalSec > 0 ? Math.min((currentTime / totalSec) * 100, 100) : 0;
+    const volumePercent = Math.round(volume * 100);
 
     container.innerHTML = `
       <div class="container">
@@ -59,6 +61,24 @@ export function createUI(container: HTMLElement, audio: AudioController) {
           </button>
         </div>
 
+        <div class="volume-section">
+          <label for="volumeSlider">音量: <span id="volumeValue">${volumePercent}%</span></label>
+          <input
+            type="range"
+            id="volumeSlider"
+            min="0"
+            max="10"
+            step="0.1"
+            value="${volume}"
+            ${!hasRecording || isRecording ? "disabled" : ""}
+          />
+          <div class="volume-labels">
+            <span>0%</span>
+            <span>100%</span>
+            <span>1000%</span>
+          </div>
+        </div>
+
         <div class="pitch-section">
           <label for="pitchSlider">ピッチ: <span id="pitchValue">${pitchSemiTones > 0 ? "+" : ""}${pitchSemiTones}</span></label>
           <input
@@ -88,6 +108,12 @@ export function createUI(container: HTMLElement, audio: AudioController) {
       document.getElementById("pitchValue")!.textContent =
         semitones > 0 ? `+${semitones}` : `${semitones}`;
       audio.setPitch(semitones);
+    });
+
+    document.getElementById("volumeSlider")?.addEventListener("input", (e) => {
+      const vol = parseFloat((e.target as HTMLInputElement).value);
+      document.getElementById("volumeValue")!.textContent = `${Math.round(vol * 100)}%`;
+      audio.setVolume(vol);
     });
 
     document.getElementById("waveform")?.addEventListener("click", (e) => {
