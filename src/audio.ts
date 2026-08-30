@@ -3,6 +3,9 @@ import { PitchShifter } from "soundtouchjs";
 export type State = "idle" | "recording" | "playing" | "paused";
 
 const MAX_RECORDING_SECONDS = 5 * 60;
+export const VOLUME_MIN = 0;
+export const VOLUME_MAX = 10;
+export const VOLUME_DEFAULT = 5;
 
 export interface AudioController {
   readonly state: State;
@@ -31,7 +34,7 @@ export function createAudioController(): AudioController {
   let audioBuffer: AudioBuffer | null = null;
   let playbackOffset = 0;
   let pitchSemiTones = 0;
-  let volume = 1.0;
+  let volume = VOLUME_DEFAULT;
   let state: State = "idle";
   let recordingTimer: number | null = null;
   let recordingDuration = 0;

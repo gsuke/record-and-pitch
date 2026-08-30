@@ -1,4 +1,5 @@
 import type { AudioController } from "./audio";
+import { VOLUME_MIN, VOLUME_MAX } from "./audio";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -90,6 +91,7 @@ function SliderSection(
   displayValue: string,
   min: string,
   max: string,
+  step: string,
   disabled: boolean,
   labels: [string, string, string],
 ): string {
@@ -101,7 +103,7 @@ function SliderSection(
         id="${id}Slider"
         min="${min}"
         max="${max}"
-        step="1"
+        step="${step}"
         value="${value}"
         ${disabled ? "disabled" : ""}
       />
@@ -120,10 +122,11 @@ function VolumeSlider(state: UIState): string {
     "音量",
     state.volume,
     `${state.volumePercent}%`,
-    "0",
-    "5",
+    String(VOLUME_MIN),
+    String(VOLUME_MAX),
+    "0.1",
     !state.hasRecording || state.isRecording,
-    ["0%", "100%", "500%"],
+    ["0%", "100%", "1000%"],
   );
 }
 
@@ -137,6 +140,7 @@ function PitchSlider(state: UIState): string {
     displayValue,
     "-12",
     "12",
+    "1",
     !state.hasRecording || state.isRecording,
     ["-12", "0", "+12"],
   );
