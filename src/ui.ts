@@ -192,10 +192,10 @@ export function createUI(container: HTMLElement, audio: AudioController) {
     );
 
     container.innerHTML = html;
-    attachEvents(s);
+    attachEvents();
   }
 
-  function attachEvents(s: UIState) {
+  function attachEvents() {
     document.getElementById("recordBtn")?.addEventListener("click", audio.toggleRecording);
     document.getElementById("playBtn")?.addEventListener("click", audio.togglePlayPause);
     document.getElementById("stopBtn")?.addEventListener("click", audio.stop);
@@ -214,17 +214,33 @@ export function createUI(container: HTMLElement, audio: AudioController) {
     });
 
     document.getElementById("waveform")?.addEventListener("click", (e) => {
-      if (!s.hasRecording || s.isRecording) return;
+      const { audioBuffer } = audio;
+      if (!audioBuffer || audio.state === "recording") return;
       const waveform = document.getElementById("waveform")!;
       const rect = waveform.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const seekTime = ratio * s.duration;
+      const seekTime = ratio * audio.duration;
       audio.seek(seekTime);
     });
   }
 
+  function updateTimeDisplay() {
+    const { currentTime, duration } = audio;
+    const timeDisplay = document.querySelector(".time-display");
+    const bar = document.querySelector(".bar") as HTMLElement;
+    if (timeDisplay) {
+      const spans = timeDisplay.querySelectorAll("span");
+      spans[0].textContent = formatTime(currentTime);
+      spans[1].textContent = formatTime(duration);
+    }
+    if (bar) {
+      const progress = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
+      bar.style.width = `${progress}%`;
+    }
+  }
+
   audio.onStateChange = () => render();
-  audio.onTimeUpdate = () => render();
+  audio.onTimeUpdate = () => updateTimeDisplay();
   audio.onRecordingDurationUpdate = () => render();
 
   render();
