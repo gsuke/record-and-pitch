@@ -7,244 +7,138 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Component types
-interface UIState {
-  state: "idle" | "recording" | "playing" | "paused";
-  isRecording: boolean;
-  isPlaying: boolean;
-  isPaused: boolean;
-  hasRecording: boolean;
-  currentTime: number;
-  duration: number;
-  pitchSemiTones: number;
-  volume: number;
-  recordingDuration: number;
-  progress: number;
-  displayTime: number;
-  volumePercent: number;
-}
-
-function Header(): string {
-  return `<h1>Record & Pitch</h1>`;
-}
-
-function RecordSection(state: UIState): string {
-  return `
-    <div class="record-section">
-      <button
-        id="recordBtn"
-        class="btn btn-record ${state.isRecording ? "recording" : ""}"
-        ${state.isPlaying || state.isPaused ? "disabled" : ""}
-      >
-        ${state.isRecording ? "● 録音中" : "○ 録音"}
-      </button>
-      <span class="timer">${formatTime(state.recordingDuration)}</span>
-    </div>
-  `;
-}
-
-function WaveformBar(state: UIState): string {
-  return `
-    <div class="waveform-placeholder" id="waveform">
-      <div class="bar" style="width:${state.progress}%"></div>
-    </div>
-  `;
-}
-
-function TimeDisplay(state: UIState): string {
-  return `
-    <div class="time-display">
-      <span>${formatTime(state.displayTime)}</span>
-      <span>${formatTime(state.duration)}</span>
-    </div>
-  `;
-}
-
-function Controls(state: UIState): string {
-  const playLabel = state.isPlaying ? "⏸ 一時停止" : "▶ 再生";
-  const stopDisabled = !state.hasRecording || (state.state === "idle" && !state.isPaused);
-
-  return `
-    <div class="controls">
-      <button
-        id="playBtn"
-        class="btn btn-primary"
-        ${!state.hasRecording || state.isRecording ? "disabled" : ""}
-      >
-        ${playLabel}
-      </button>
-      <button
-        id="stopBtn"
-        class="btn"
-        ${stopDisabled ? "disabled" : ""}
-      >
-        ⏹ 停止
-      </button>
-    </div>
-  `;
-}
-
-function SliderSection(
-  id: string,
-  label: string,
-  value: number,
-  displayValue: string,
-  min: string,
-  max: string,
-  step: string,
-  disabled: boolean,
-  labels: [string, string, string],
-): string {
-  return `
-    <div class="pitch-section">
-      <label for="${id}Slider">${label}: <span id="${id}Value">${displayValue}</span></label>
-      <input
-        type="range"
-        id="${id}Slider"
-        min="${min}"
-        max="${max}"
-        step="${step}"
-        value="${value}"
-        ${disabled ? "disabled" : ""}
-      />
-      <div class="pitch-labels">
-        <span>${labels[0]}</span>
-        <span>${labels[1]}</span>
-        <span>${labels[2]}</span>
-      </div>
-    </div>
-  `;
-}
-
-function VolumeSlider(state: UIState): string {
-  return SliderSection(
-    "volume",
-    "音量",
-    state.volume,
-    `${state.volumePercent}%`,
-    String(VOLUME_MIN),
-    String(VOLUME_MAX),
-    "0.1",
-    !state.hasRecording || state.isRecording,
-    ["0%", "100%", "1000%"],
-  );
-}
-
-function PitchSlider(state: UIState): string {
-  const displayValue =
-    state.pitchSemiTones > 0 ? `+${state.pitchSemiTones}` : `${state.pitchSemiTones}`;
-  return SliderSection(
-    "pitch",
-    "ピッチ",
-    state.pitchSemiTones,
-    displayValue,
-    "-12",
-    "12",
-    "1",
-    !state.hasRecording || state.isRecording,
-    ["-12", "0", "+12"],
-  );
-}
-
-function AppContainer(children: string): string {
-  return `<div class="container">${children}</div>`;
-}
-
 export function createUI(container: HTMLElement, audio: AudioController) {
-  function getState(): UIState {
+  let rafId: number | null = null;
+
+  function render() {
     const { state, audioBuffer, currentTime, duration, pitchSemiTones, volume, recordingDuration } =
       audio;
     const isRecording = state === "recording";
     const isPlaying = state === "playing";
     const isPaused = state === "paused";
     const hasRecording = audioBuffer !== null;
-
-    const displayTime = isRecording ? recordingDuration : currentTime;
     const progress = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
     const volumePercent = Math.round(volume * 100);
+    const displayTime = isRecording ? recordingDuration : currentTime;
 
-    return {
-      state,
-      isRecording,
-      isPlaying,
-      isPaused,
-      hasRecording,
-      currentTime,
-      duration,
-      pitchSemiTones,
-      volume,
-      recordingDuration,
-      progress,
-      displayTime,
-      volumePercent,
-    };
-  }
+    container.innerHTML = `
+      <div class="container">
+        <h1>Record & Pitch</h1>
 
-  function render() {
-    const s = getState();
+        <div class="record-section">
+          <button id="recordBtn" class="btn btn-record ${isRecording ? "recording" : ""}"
+            ${isPlaying || isPaused ? "disabled" : ""}>
+            ${isRecording ? "● 録音中" : "○ 録音"}
+          </button>
+          <span class="timer">${formatTime(recordingDuration)}</span>
+        </div>
 
-    const html = AppContainer(
-      [
-        Header(),
-        RecordSection(s),
-        WaveformBar(s),
-        TimeDisplay(s),
-        Controls(s),
-        VolumeSlider(s),
-        PitchSlider(s),
-      ].join(""),
-    );
+        <div class="waveform-placeholder" id="waveform">
+          <div class="bar" id="progressBar" style="width:${progress}%"></div>
+        </div>
 
-    container.innerHTML = html;
-    attachEvents();
-  }
+        <div class="time-display" id="timeDisplay">
+          <span id="currentTime">${formatTime(displayTime)}</span>
+          <span id="totalTime">${formatTime(duration)}</span>
+        </div>
 
-  function attachEvents() {
-    document.getElementById("recordBtn")?.addEventListener("click", audio.toggleRecording);
-    document.getElementById("playBtn")?.addEventListener("click", audio.togglePlayPause);
-    document.getElementById("stopBtn")?.addEventListener("click", audio.stop);
+        <div class="controls">
+          <button id="playBtn" class="btn btn-primary"
+            ${!hasRecording || isRecording ? "disabled" : ""}>
+            ${isPlaying ? "⏸ 一時停止" : "▶ 再生"}
+          </button>
+          <button id="stopBtn" class="btn"
+            ${!hasRecording || (state === "idle" && !isPaused) ? "disabled" : ""}>
+            ⏹ 停止
+          </button>
+        </div>
 
-    document.getElementById("volumeSlider")?.addEventListener("input", (e) => {
+        <div class="volume-section">
+          <label for="volumeSlider">音量: <span id="volumeValue">${volumePercent}%</span></label>
+          <input type="range" id="volumeSlider" min="${VOLUME_MIN}" max="${VOLUME_MAX}" step="0.1"
+            value="${volume}" ${!hasRecording || isRecording ? "disabled" : ""}/>
+          <div class="volume-labels">
+            <span>0%</span><span>100%</span><span>1000%</span>
+          </div>
+        </div>
+
+        <div class="pitch-section">
+          <label for="pitchSlider">ピッチ: <span id="pitchValue">${pitchSemiTones > 0 ? "+" : ""}${pitchSemiTones}</span></label>
+          <input type="range" id="pitchSlider" min="-12" max="12" step="1"
+            value="${pitchSemiTones}" ${!hasRecording || isRecording ? "disabled" : ""}/>
+          <div class="pitch-labels">
+            <span>-12</span><span>0</span><span>+12</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Bind events only once per full render
+    document.getElementById("recordBtn")!.addEventListener("click", audio.toggleRecording);
+    document.getElementById("playBtn")!.addEventListener("click", audio.togglePlayPause);
+    document.getElementById("stopBtn")!.addEventListener("click", audio.stop);
+    document.getElementById("volumeSlider")!.addEventListener("input", (e) => {
       const vol = parseFloat((e.target as HTMLInputElement).value);
       document.getElementById("volumeValue")!.textContent = `${Math.round(vol * 100)}%`;
       audio.setVolume(vol);
     });
-
-    document.getElementById("pitchSlider")?.addEventListener("input", (e) => {
+    document.getElementById("pitchSlider")!.addEventListener("input", (e) => {
       const semitones = parseInt((e.target as HTMLInputElement).value);
       document.getElementById("pitchValue")!.textContent =
         semitones > 0 ? `+${semitones}` : `${semitones}`;
       audio.setPitch(semitones);
     });
-
-    document.getElementById("waveform")?.addEventListener("click", (e) => {
-      const { audioBuffer } = audio;
-      if (!audioBuffer || audio.state === "recording") return;
-      const waveform = document.getElementById("waveform")!;
-      const rect = waveform.getBoundingClientRect();
+    document.getElementById("waveform")!.addEventListener("click", (e) => {
+      if (!audio.audioBuffer || audio.state === "recording") return;
+      const rect = document.getElementById("waveform")!.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const seekTime = ratio * audio.duration;
-      audio.seek(seekTime);
+      audio.seek(ratio * audio.duration);
     });
   }
 
-  function updateTimeDisplay() {
-    const { currentTime, duration } = audio;
-    const timeDisplay = document.querySelector(".time-display");
-    const bar = document.querySelector(".bar") as HTMLElement;
-    if (timeDisplay) {
-      const spans = timeDisplay.querySelectorAll("span");
-      spans[0].textContent = formatTime(currentTime);
-      spans[1].textContent = formatTime(duration);
+  function updateDisplay() {
+    const { state, currentTime, duration, volume, recordingDuration } = audio;
+    const progress = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
+    const displayTime = state === "recording" ? recordingDuration : currentTime;
+
+    const bar = document.getElementById("progressBar");
+    const currentTimeEl = document.getElementById("currentTime");
+    const totalTimeEl = document.getElementById("totalTime");
+    const volumeValueEl = document.getElementById("volumeValue");
+
+    if (bar) bar.style.width = `${progress}%`;
+    if (currentTimeEl) currentTimeEl.textContent = formatTime(displayTime);
+    if (totalTimeEl) totalTimeEl.textContent = formatTime(duration);
+    if (volumeValueEl) volumeValueEl.textContent = `${Math.round(volume * 100)}%`;
+  }
+
+  function startLoop() {
+    if (rafId !== null) return;
+    function loop() {
+      if (audio.state === "playing") {
+        updateDisplay();
+      }
+      rafId = requestAnimationFrame(loop);
     }
-    if (bar) {
-      const progress = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
-      bar.style.width = `${progress}%`;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stopLoop() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
     }
   }
 
-  audio.onStateChange = () => render();
-  audio.onTimeUpdate = () => updateTimeDisplay();
+  audio.onStateChange = () => {
+    if (audio.state === "playing") {
+      startLoop();
+    } else {
+      stopLoop();
+      render();
+    }
+  };
+  audio.onTimeUpdate = () => {}; // RAF loop handles updates
   audio.onRecordingDurationUpdate = () => render();
 
   render();
