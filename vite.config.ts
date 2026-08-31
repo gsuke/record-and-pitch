@@ -16,4 +16,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   plugins: [tailwindcss()],
+  server: {
+    allowedHosts: true,
+  },
 });
