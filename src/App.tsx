@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { useRef, useEffect } from "react";
 import type { AudioController } from "./audio";
-import { Button } from "./components/ui/button";
 import { Slider } from "./components/ui/slider";
 
 function formatTime(sec: number): string {
@@ -45,6 +44,27 @@ function drawWaveform(canvas: HTMLCanvasElement, peaks: number[], fillRatio: num
   }
 }
 
+// ─── Play/Pause Button ───────────────────────────────────────
+function PlayPauseButton({
+  isPlaying,
+  isDisabled,
+  onClick,
+}: {
+  isPlaying: boolean;
+  isDisabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={isDisabled}
+      className="w-10 h-10 rounded-full bg-primary text-primary-foreground font-bold text-lg leading-none hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/50 shrink-0"
+    >
+      {isPlaying ? "❚❚" : "▶"}
+    </button>
+  );
+}
+
 // ─── Record Button ───────────────────────────────────────────
 function RecordButton({
   isRecording,
@@ -69,9 +89,10 @@ function RecordButton({
 // ─── Time Display (RAF-driven DOM updates) ───────────────────
 interface TimeDisplayProps {
   audio: AudioController;
+  leftControl?: React.ReactNode;
 }
 
-function TimeDisplay({ audio }: TimeDisplayProps) {
+function TimeDisplay({ audio, leftControl }: TimeDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -124,28 +145,31 @@ function TimeDisplay({ audio }: TimeDisplayProps) {
   }, [audio]);
 
   return (
-    <>
-      <div
-        ref={containerRef}
-        className="h-12 bg-muted rounded-lg relative overflow-hidden cursor-pointer"
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-          audio.seek(ratio * audio.duration);
-        }}
-      >
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+    <div className="flex items-center gap-3">
+      {leftControl}
+      <div className="flex flex-col flex-1 gap-1">
         <div
-          ref={progressRef}
-          className="absolute top-0 left-0 h-full bg-primary/20"
-          style={{ width: "0%" }}
-        />
+          ref={containerRef}
+          className="h-12 bg-muted rounded-lg relative overflow-hidden cursor-pointer"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            audio.seek(ratio * audio.duration);
+          }}
+        >
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+          <div
+            ref={progressRef}
+            className="absolute top-0 left-0 h-full bg-primary/20"
+            style={{ width: "0%" }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
+          <span ref={timeTextRef}>0:00</span>
+          <span ref={durationTextRef}>0:00</span>
+        </div>
       </div>
-      <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
-        <span ref={timeTextRef}>0:00</span>
-        <span ref={durationTextRef}>0:00</span>
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -275,26 +299,16 @@ export function App({ audio }: AppProps) {
         </div>
 
         {/* Time & Progress */}
-        <TimeDisplay audio={audio} />
-
-        {/* Controls */}
-        <div className="flex gap-3 justify-center">
-          <Button
-            variant="default"
-            onClick={() => audio.togglePlayPause()}
-            disabled={!hasRecording || isRecording}
-            className="min-w-28"
-          >
-            {isPlaying ? "⏸ 一時停止" : "▶ 再生"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => audio.stop()}
-            disabled={!hasRecording || (state === "idle" && !isPaused)}
-          >
-            ⏹ 停止
-          </Button>
-        </div>
+        <TimeDisplay
+          audio={audio}
+          leftControl={
+            <PlayPauseButton
+              isPlaying={isPlaying}
+              isDisabled={!hasRecording || isRecording}
+              onClick={() => (isPlaying ? audio.stop() : audio.togglePlayPause())}
+            />
+          }
+        />
 
         {/* Volume */}
         <VolumeControl
