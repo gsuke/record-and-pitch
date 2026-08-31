@@ -74,9 +74,9 @@ export function createUI(container: HTMLElement, audio: AudioController) {
     `;
 
     // Bind events only once per full render
-    document.getElementById("recordBtn")!.addEventListener("click", audio.toggleRecording);
-    document.getElementById("playBtn")!.addEventListener("click", audio.togglePlayPause);
-    document.getElementById("stopBtn")!.addEventListener("click", audio.stop);
+    document.getElementById("recordBtn")!.addEventListener("click", () => audio.toggleRecording());
+    document.getElementById("playBtn")!.addEventListener("click", () => audio.togglePlayPause());
+    document.getElementById("stopBtn")!.addEventListener("click", () => audio.stop());
     document.getElementById("volumeSlider")!.addEventListener("input", (e) => {
       const vol = parseFloat((e.target as HTMLInputElement).value);
       document.getElementById("volumeValue")!.textContent = `${Math.round(vol * 100)}%`;

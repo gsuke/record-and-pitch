@@ -53,7 +53,7 @@ export function createAudioController(): AudioController {
     if (!audioContext || !audioBuffer) return;
 
     if (audioContext.state === "suspended") {
-      audioContext.resume();
+      void audioContext.resume();
     }
 
     stopPlayback();
