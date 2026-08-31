@@ -173,8 +173,8 @@ export function createAudioController(): AudioController {
           .getUserMedia({
             audio: {
               echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
+              noiseSuppression: true, // 便利なので有効
+              autoGainControl: false, // 音質悪化の原因になるので無効
               sampleRate: 44100,
             },
           })
