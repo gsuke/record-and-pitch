@@ -45,6 +45,27 @@ function drawWaveform(canvas: HTMLCanvasElement, peaks: number[], fillRatio: num
   }
 }
 
+// ─── Record Button ───────────────────────────────────────────
+function RecordButton({
+  isRecording,
+  isDisabled,
+  onToggle,
+}: {
+  isRecording: boolean;
+  isDisabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={isDisabled}
+      className="w-14 h-14 rounded-full bg-destructive border-4 border-destructive/20 text-destructive-foreground font-bold text-lg hover:bg-destructive/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/50"
+    >
+      {isRecording ? "■" : "●"}
+    </button>
+  );
+}
+
 // ─── Time Display (RAF-driven DOM updates) ───────────────────
 interface TimeDisplayProps {
   audio: AudioController;
@@ -242,15 +263,12 @@ export function App({ audio }: AppProps) {
         <h1 className="text-center text-lg font-semibold text-foreground">Record & Pitch</h1>
 
         {/* Record */}
-        <div className="flex items-center gap-4">
-          <Button
-            variant={isRecording ? "destructive" : "outline"}
-            onClick={() => audio.toggleRecording()}
-            disabled={isPlaying || isPaused}
-            className="min-w-28"
-          >
-            {isRecording ? "● 録音中" : "○ 録音"}
-          </Button>
+        <div className="flex flex-col items-center gap-2">
+          <RecordButton
+            isRecording={isRecording}
+            isDisabled={isPlaying || isPaused}
+            onToggle={() => audio.toggleRecording()}
+          />
           <span className="text-sm text-muted-foreground font-mono tabular-nums">
             {formatTime(recordingDuration)}
           </span>
