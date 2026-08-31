@@ -38,10 +38,11 @@ export function Slider({
         onChange={(e) => onValueChange([Number(e.target.value)])}
         disabled={disabled}
         className="absolute inset-0 w-full cursor-pointer opacity-0"
+        style={{ margin: 0 }}
       />
       <div
-        className="absolute h-4 w-4 rounded-full border border-primary/50 bg-background shadow-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-        style={{ left: `calc(${percentage}% - 8px)` }}
+        className="absolute h-4 w-4 rounded-full border border-primary/50 bg-background shadow-sm pointer-events-none"
+        style={{ left: `calc(${percentage}% - 8px)`, top: "50%", transform: "translateY(-50%)" }}
       />
     </div>
   );
