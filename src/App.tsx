@@ -80,14 +80,14 @@ function VolumeControl({
         value={[value]}
         min={0}
         max={10}
-        step={0.1}
+        step={0.5}
         onValueChange={([v]) => onChange(v)}
         disabled={disabled}
         className="w-full"
       />
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>0%</span>
-        <span>100%</span>
+        <span>500%</span>
         <span>1000%</span>
       </div>
     </div>
