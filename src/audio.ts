@@ -7,23 +7,25 @@ export const VOLUME_MIN = 0;
 export const VOLUME_MAX = 10;
 export const VOLUME_DEFAULT = 5;
 
-export interface AudioController {
-  readonly state: State;
-  readonly audioBuffer: AudioBuffer | null;
-  readonly currentTime: number;
-  readonly duration: number;
-  readonly pitchSemiTones: number;
-  readonly volume: number;
-  readonly recordingDuration: number;
-  onStateChange?: (state: State) => void;
-  onTimeUpdate?: (currentTime: number) => void;
-  onRecordingDurationUpdate?: (duration: number) => void;
+export interface AudioSnapshot {
+  state: State;
+  audioBuffer: AudioBuffer | null;
+  currentTime: number;
+  duration: number;
+  pitchSemiTones: number;
+  volume: number;
+  recordingDuration: number;
+}
+
+export interface AudioController extends AudioSnapshot {
   toggleRecording(): void;
   togglePlayPause(): void;
   stop(): void;
   seek(time: number): void;
   setPitch(semitones: number): void;
   setVolume(volume: number): void;
+  subscribeState(onStoreChange: () => void): () => void;
+  subscribeTime(onTimeChange: () => void): () => void;
 }
 
 export function createAudioController(): AudioController {
@@ -34,10 +36,21 @@ export function createAudioController(): AudioController {
   let audioBuffer: AudioBuffer | null = null;
   let playbackOffset = 0;
   let pitchSemiTones = 0;
-  let volume = VOLUME_DEFAULT;
-  let state: State = "idle";
+  let _state: State = "idle";
   let recordingTimer: number | null = null;
   let recordingDuration = 0;
+  let volume = VOLUME_DEFAULT;
+
+  let stateListeners: (() => void)[] = [];
+  let timeListeners: (() => void)[] = [];
+
+  function notifyState() {
+    stateListeners.forEach((l) => l());
+  }
+
+  function notifyTime() {
+    timeListeners.forEach((l) => l());
+  }
 
   function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
@@ -51,40 +64,33 @@ export function createAudioController(): AudioController {
 
   function play(offset: number) {
     if (!audioContext || !audioBuffer) return;
-
     if (audioContext.state === "suspended") {
       void audioContext.resume();
     }
-
     stopPlayback();
-
     gainNode = audioContext.createGain();
     gainNode.gain.value = volume;
     gainNode.connect(audioContext.destination);
-
     const bufferToPlay = offset > 0 ? sliceBuffer(audioBuffer, offset) : audioBuffer;
     playbackOffset = offset;
-
     pitchShifter = new PitchShifter(audioContext, bufferToPlay, 2048);
     pitchShifter.on("play", () => {
-      state = "playing";
-      controller.onStateChange?.(state);
+      _state = "playing";
+      notifyState();
     });
     pitchShifter.on("end", () => {
-      if (state === "playing") {
+      if (_state === "playing") {
         stop();
       }
     });
     pitchShifter.on("timeupdate", () => {
-      controller.onTimeUpdate?.(controller.currentTime);
+      notifyTime();
     });
-
     pitchShifter.tempo = 1;
     pitchShifter.pitch = Math.pow(2, pitchSemiTones / 12);
-
     pitchShifter.connect(gainNode);
-    state = "playing";
-    controller.onStateChange?.(state);
+    _state = "playing";
+    notifyState();
   }
 
   function pause() {
@@ -100,8 +106,8 @@ export function createAudioController(): AudioController {
       gainNode.disconnect();
       gainNode = null;
     }
-    state = "paused";
-    controller.onStateChange?.(state);
+    _state = "paused";
+    notifyState();
   }
 
   function stopPlayback() {
@@ -135,14 +141,14 @@ export function createAudioController(): AudioController {
 
   const controller: AudioController = {
     get state() {
-      return state;
+      return _state;
     },
     get audioBuffer() {
       return audioBuffer;
     },
     get currentTime() {
-      if (state === "recording") return recordingDuration;
-      if ((state === "playing" || state === "paused") && pitchShifter) {
+      if (_state === "recording") return recordingDuration;
+      if ((_state === "playing" || _state === "paused") && pitchShifter) {
         return playbackOffset + pitchShifter.timePlayed;
       }
       return 0;
@@ -160,61 +166,74 @@ export function createAudioController(): AudioController {
       return recordingDuration;
     },
 
+    subscribeState(onStoreChange: () => void) {
+      stateListeners.push(onStoreChange);
+      return () => {
+        stateListeners = stateListeners.filter((l) => l !== onStoreChange);
+      };
+    },
+
+    subscribeTime(onTimeChange: () => void) {
+      timeListeners.push(onTimeChange);
+      return () => {
+        timeListeners = timeListeners.filter((l) => l !== onTimeChange);
+      };
+    },
+
     toggleRecording() {
-      if (state === "recording") {
+      if (_state === "recording") {
         stopRecording();
-      } else {
-        const chunks: Blob[] = [];
-        recordingDuration = 0;
-        audioBuffer = null;
-        playbackOffset = 0;
-
-        navigator.mediaDevices
-          .getUserMedia({
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: true, // 便利なので有効
-              autoGainControl: false, // 音質悪化の原因になるので無効
-              sampleRate: 44100,
-            },
-          })
-          .then((stream) => {
-            mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-            mediaRecorder.ondataavailable = (e) => {
-              if (e.data.size > 0) chunks.push(e.data);
-            };
-            mediaRecorder.onstop = async () => {
-              const blob = new Blob(chunks, { type: "audio/webm;codecs=opus" });
-              audioContext = new AudioContext();
-              const arrayBuffer = await blob.arrayBuffer();
-              audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-              stream.getTracks().forEach((t) => t.stop());
-              state = "idle";
-              controller.onStateChange?.(state);
-            };
-            mediaRecorder.start();
-            state = "recording";
-            controller.onStateChange?.(state);
-
-            recordingTimer = window.setInterval(() => {
-              recordingDuration++;
-              controller.onRecordingDurationUpdate?.(recordingDuration);
-              if (recordingDuration >= MAX_RECORDING_SECONDS) {
-                stopRecording();
-              }
-            }, 1000);
-          })
-          .catch((err) => {
-            alert("マイクへのアクセスできませんでした。");
-            console.error(err);
-          });
+        return;
       }
+      const chunks: Blob[] = [];
+      recordingDuration = 0;
+      audioBuffer = null;
+      playbackOffset = 0;
+
+      navigator.mediaDevices
+        .getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: true,
+            autoGainControl: false,
+            sampleRate: 44100,
+          },
+        })
+        .then((stream) => {
+          mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+          mediaRecorder.onstop = async () => {
+            const blob = new Blob(chunks, { type: "audio/webm;codecs=opus" });
+            audioContext = new AudioContext();
+            const arrayBuffer = await blob.arrayBuffer();
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            stream.getTracks().forEach((t) => t.stop());
+            _state = "idle";
+            notifyState();
+          };
+          mediaRecorder.start();
+          _state = "recording";
+          notifyState();
+          recordingTimer = window.setInterval(() => {
+            recordingDuration++;
+            notifyTime();
+            if (recordingDuration >= MAX_RECORDING_SECONDS) {
+              stopRecording();
+            }
+          }, 1000);
+        })
+        .catch((err) => {
+          alert("マイクへのアクセスできませんでした。");
+          console.error(err);
+        });
     },
 
     togglePlayPause() {
-      if (state === "playing") {
+      if (_state === "playing") {
         pause();
-      } else if (state === "paused") {
+      } else if (_state === "paused") {
         const safeOffset = Math.min(playbackOffset, (audioBuffer?.duration ?? 0) - 0.01);
         play(safeOffset);
       } else {
@@ -225,12 +244,12 @@ export function createAudioController(): AudioController {
     stop() {
       stopPlayback();
       playbackOffset = 0;
-      state = "idle";
-      controller.onStateChange?.(state);
+      _state = "idle";
+      notifyState();
     },
 
     seek(time: number) {
-      const wasPlaying = state === "playing";
+      const wasPlaying = _state === "playing";
       if (wasPlaying) stopPlayback();
       setTimeout(() => play(time), 50);
     },
@@ -240,6 +259,7 @@ export function createAudioController(): AudioController {
       if (pitchShifter) {
         pitchShifter.pitch = Math.pow(2, semitones / 12);
       }
+      notifyState();
     },
 
     setVolume(v: number) {
@@ -247,6 +267,7 @@ export function createAudioController(): AudioController {
       if (gainNode) {
         gainNode.gain.value = v;
       }
+      notifyState();
     },
   };
 

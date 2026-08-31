@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useSyncExternalStore } from "react";
+import { useRef, useEffect } from "react";
 import type { AudioController } from "./audio";
 import { Button } from "./components/ui/button";
 import { Slider } from "./components/ui/slider";
@@ -9,71 +10,66 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// ─── Time Display ────────────────────────────────────────────
+// ─── Time Display (RAF-driven DOM updates) ───────────────────
 interface TimeDisplayProps {
   audio: AudioController;
-  duration: number;
 }
 
-function TimeDisplay({ audio, duration }: TimeDisplayProps) {
-  const [currentTime, setCurrentTime] = useState(0);
+function TimeDisplay({ audio }: TimeDisplayProps) {
+  const progressRef = useRef<HTMLDivElement>(null);
+  const timeTextRef = useRef<HTMLSpanElement>(null);
+  const durationTextRef = useRef<HTMLSpanElement>(null);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
-    let rafId: number;
-    let lastUpdate = 0;
-
-    function loop() {
-      rafId = requestAnimationFrame(loop);
-      const now = performance.now();
-      if (now - lastUpdate > 50) {
-        lastUpdate = now;
-        setCurrentTime(audio.currentTime);
-      }
+    function updateDOM() {
+      const time = audio.currentTime;
+      const dur = audio.duration;
+      const progress = dur > 0 ? Math.min((time / dur) * 100, 100) : 0;
+      if (progressRef.current) progressRef.current.style.width = `${progress}%`;
+      if (timeTextRef.current) timeTextRef.current.textContent = formatTime(time);
+      if (durationTextRef.current) durationTextRef.current.textContent = formatTime(dur);
+      rafRef.current = requestAnimationFrame(updateDOM);
     }
 
-    if (audio.state === "playing") {
-      rafId = requestAnimationFrame(loop);
-    } else {
-      setCurrentTime(audio.state === "recording" ? audio.recordingDuration : audio.currentTime);
-    }
-
-    return () => cancelAnimationFrame(rafId);
-  }, [audio, audio.state]);
-
-  const progress = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
+    rafRef.current = requestAnimationFrame(updateDOM);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [audio]);
 
   return (
     <>
       <div
         className="h-12 bg-muted rounded-lg relative overflow-hidden cursor-pointer"
         onClick={(e) => {
-          if (!audio.audioBuffer || audio.state === "recording") return;
           const rect = e.currentTarget.getBoundingClientRect();
           const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-          audio.seek(ratio * duration);
+          audio.seek(ratio * audio.duration);
         }}
       >
         <div
-          className="absolute top-0 left-0 h-full bg-primary/30 transition-all duration-100"
-          style={{ width: `${progress}%` }}
+          ref={progressRef}
+          className="absolute top-0 left-0 h-full bg-primary/30"
+          style={{ width: "0%" }}
         />
       </div>
       <div className="flex justify-between text-xs text-muted-foreground font-mono tabular-nums">
-        <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(duration)}</span>
+        <span ref={timeTextRef}>0:00</span>
+        <span ref={durationTextRef}>0:00</span>
       </div>
     </>
   );
 }
 
 // ─── Volume Control ─────────────────────────────────────────
-interface VolumeControlProps {
+function VolumeControl({
+  value,
+  disabled,
+  onChange,
+}: {
   value: number;
   disabled: boolean;
   onChange: (v: number) => void;
-}
-
-function VolumeControl({ value, disabled, onChange }: VolumeControlProps) {
+}) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-sm">
@@ -99,13 +95,15 @@ function VolumeControl({ value, disabled, onChange }: VolumeControlProps) {
 }
 
 // ─── Pitch Control ──────────────────────────────────────────
-interface PitchControlProps {
+function PitchControl({
+  value,
+  disabled,
+  onChange,
+}: {
   value: number;
   disabled: boolean;
   onChange: (v: number) => void;
-}
-
-function PitchControl({ value, disabled, onChange }: PitchControlProps) {
+}) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-sm">
@@ -139,44 +137,36 @@ interface AppProps {
 }
 
 export function App({ audio }: AppProps) {
-  const [state, setState] = useState(audio.state);
-  const [duration, setDuration] = useState(audio.duration);
-  const [pitch, setPitch] = useState(audio.pitchSemiTones);
-  const [volume, setVolume] = useState(audio.volume);
-  const [recordingDuration, setRecordingDuration] = useState(0);
+  const state = useSyncExternalStore(
+    audio.subscribeState,
+    () => audio.state,
+    () => "idle",
+  );
+  const pitch = useSyncExternalStore(
+    audio.subscribeState,
+    () => audio.pitchSemiTones,
+    () => 0,
+  );
+  const volume = useSyncExternalStore(
+    audio.subscribeState,
+    () => audio.volume,
+    () => audio.volume,
+  );
+  const recordingDuration = useSyncExternalStore(
+    audio.subscribeState,
+    () => audio.recordingDuration,
+    () => 0,
+  );
+  const audioBuffer = useSyncExternalStore(
+    audio.subscribeState,
+    () => audio.audioBuffer,
+    () => null,
+  );
 
   const isRecording = state === "recording";
   const isPlaying = state === "playing";
   const isPaused = state === "paused";
-  const hasRecording = audio.audioBuffer !== null;
-
-  useEffect(() => {
-    audio.onStateChange = (s) => setState(s);
-    audio.onTimeUpdate = () => {};
-    audio.onRecordingDurationUpdate = (d) => setRecordingDuration(d);
-  }, [audio]);
-
-  useEffect(() => {
-    setDuration(audio.duration);
-    setPitch(audio.pitchSemiTones);
-    setVolume(audio.volume);
-  }, [audio]);
-
-  const handleVolumeChange = useCallback(
-    (v: number) => {
-      setVolume(v);
-      audio.setVolume(v);
-    },
-    [audio],
-  );
-
-  const handlePitchChange = useCallback(
-    (v: number) => {
-      setPitch(v);
-      audio.setPitch(v);
-    },
-    [audio],
-  );
+  const hasRecording = audioBuffer !== null;
 
   return (
     <div className="min-h-svh flex items-center justify-center p-4">
@@ -199,7 +189,7 @@ export function App({ audio }: AppProps) {
         </div>
 
         {/* Time & Progress */}
-        <TimeDisplay audio={audio} duration={duration} />
+        <TimeDisplay audio={audio} />
 
         {/* Controls */}
         <div className="flex gap-3 justify-center">
@@ -224,14 +214,14 @@ export function App({ audio }: AppProps) {
         <VolumeControl
           value={volume}
           disabled={!hasRecording || isRecording}
-          onChange={handleVolumeChange}
+          onChange={(v) => audio.setVolume(v)}
         />
 
         {/* Pitch */}
         <PitchControl
           value={pitch}
           disabled={!hasRecording || isRecording}
-          onChange={handlePitchChange}
+          onChange={(v) => audio.setPitch(v)}
         />
       </div>
     </div>
